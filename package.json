@@ -1,0 +1,25 @@
+{
+  "name": "toolshop-automation",
+  "version": "1.0.0",
+  "description": "UI and API test automation framework built with Playwright and TypeScript, with CI on GitHub Actions",
+  "main": "index.js",
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sharonrodriguez22/toolshop-automation.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/sharonrodriguez22/toolshop-automation/issues"
+  },
+  "homepage": "https://github.com/sharonrodriguez22/toolshop-automation#readme",
+  "devDependencies": {
+    "@faker-js/faker": "^10.6.0",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.6.2",
+    "dotenv": "^18.0.1"
+  }
+}
