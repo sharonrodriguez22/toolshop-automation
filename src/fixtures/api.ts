@@ -1,26 +1,42 @@
-import { test as base, request as playwrightRequest, APIRequestContext } from '@playwright/test';
+import {
+  test as base,
+  request as playwrightRequest,
+  APIRequestContext,
+} from '@playwright/test';
 
-export const test = base.extend<{}, { authedRequest: APIRequestContext }>({
-  authedRequest: [async ({}, use) => {
-    const context = await playwrightRequest.newContext({
-      baseURL: process.env.API_BASE_URL,
-    });
+type WorkerFixtures = {
+  authedRequest: APIRequestContext;
+};
 
-    const response = await context.post('/users/login', {
-      data: {
-        email: process.env.TEST_USER_EMAIL,
-        password: process.env.TEST_USER_PASSWORD,
-      },
-    });
-    const { access_token } = await response.json();
-    await context.dispose();
+export const apiTest = base.extend<{}, WorkerFixtures>({
+  authedRequest: [
+    async ({}, use) => {
+      const anonimo = await playwrightRequest.newContext({
+        baseURL: process.env.API_BASE_URL,
+      });
 
-    const authed = await playwrightRequest.newContext({
-      baseURL: process.env.API_BASE_URL,
-      extraHTTPHeaders: { Authorization: `Bearer ${access_token}` },
-    });
+      const login = await anonimo.post('/users/login', {
+        data: {
+          email: process.env.TEST_USER_EMAIL,
+          password: process.env.TEST_USER_PASSWORD,
+        },
+      });
 
-    await use(authed);
-    await authed.dispose();
-  }, { scope: 'worker' }],
+      if (!login.ok()) {
+        throw new Error(`Login falló con status ${login.status()}`);
+      }
+
+      const { access_token } = await login.json();
+      await anonimo.dispose();
+
+      const autenticado = await playwrightRequest.newContext({
+        baseURL: process.env.API_BASE_URL,
+        extraHTTPHeaders: { Authorization: `Bearer ${access_token}` },
+      });
+
+      await use(autenticado);
+      await autenticado.dispose();
+    },
+    { scope: 'worker' },
+  ],
 });

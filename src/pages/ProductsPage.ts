@@ -3,14 +3,18 @@ import { Page, Locator } from '@playwright/test';
 export class ProductsPage {
   readonly productCards: Locator;
   readonly productNames: Locator;
+  readonly noResults: Locator;
+  readonly searchResultCount: Locator;
   private readonly searchInput: Locator;
   private readonly searchSubmit: Locator;
 
   constructor(private readonly page: Page) {
-    this.searchInput  = page.getByTestId('search-query');
-    this.searchSubmit = page.getByTestId('search-submit');
-    this.productNames = page.getByTestId('product-name');
-    this.productCards = page.locator('[data-test^="product-01"]');
+    this.searchInput       = page.getByTestId('search-query');
+    this.searchSubmit      = page.getByTestId('search-submit');
+    this.productNames      = page.getByTestId('product-name');
+    this.noResults         = page.getByTestId('no-results');
+    this.searchResultCount = page.getByTestId('search-result-count');
+    this.productCards      = page.locator('[data-test^="product-01"]');
   }
 
   async goto(): Promise<void> {

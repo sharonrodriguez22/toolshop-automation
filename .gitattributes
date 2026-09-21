@@ -1,0 +1,12 @@
+# Normaliza el fin de línea: LF en el repositorio, en cualquier sistema
+# operativo. Sin esto, un editor en Windows que guarda con CRLF hace que
+# git marque el archivo completo como modificado, y los diffs se vuelven
+# ilegibles. También evita diferencias entre esta máquina y el CI de Linux.
+* text=auto eol=lf
+
+# Archivos binarios: git no debe tocarlos
+*.png binary
+*.jpg binary
+*.avif binary
+*.webm binary
+*.zip binary

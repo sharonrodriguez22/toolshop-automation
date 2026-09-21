@@ -21,6 +21,8 @@ jobs:
 
       - run: npm ci
 
+      - run: npx tsc --noEmit
+      
       - run: npx playwright install --with-deps
 
       - run: npx playwright test --project=ui-chromium --project=api

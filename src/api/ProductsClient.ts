@@ -1,4 +1,4 @@
-import { APIRequestContext } from '@playwright/test';
+import { APIRequestContext, APIResponse } from '@playwright/test';
 import { Product, Paginated } from './types';
 
 export class ProductsClient {
@@ -8,20 +8,41 @@ export class ProductsClient {
     const response = await this.request.get('/products', {
       params: { page },
     });
+
     if (!response.ok()) {
-      throw new Error(`GET /products falló: ${response.status()}`);
+      throw new Error(`GET /products?page=${page} falló: ${response.status()}`);
     }
+
+    return response.json();
+  }
+
+  async search(term: string): Promise<Paginated<Product>> {
+    const response = await this.request.get('/products/search', {
+      params: { q: term },
+    });
+
+    if (!response.ok()) {
+      throw new Error(`GET /products/search falló: ${response.status()}`);
+    }
+
     return response.json();
   }
 
   async firstAvailable(): Promise<Product> {
-    const { data } = await this.list();
-    const product = data.find((p) => p.in_stock);
-    if (!product) throw new Error('No hay productos en stock');
-    return product;
+    const primera = await this.list();
+
+    for (let pagina = 1; pagina <= primera.last_page; pagina++) {
+      const { data } = pagina === 1 ? primera : await this.list(pagina);
+      const disponible = data.find((p) => p.in_stock);
+      if (disponible) return disponible;
+    }
+
+    throw new Error(
+      `Ningún producto en stock en las ${primera.last_page} páginas del catálogo`
+    );
   }
 
-  async getById(id: string) {
+  async getById(id: string): Promise<APIResponse> {
     return this.request.get(`/products/${id}`);
   }
 }
