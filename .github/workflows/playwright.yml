@@ -11,6 +11,7 @@ on:
 env:
   UI_BASE_URL: http://localhost:4200
   API_BASE_URL: http://localhost:8091
+  COMPOSE_FILE: docker-compose.prod.yml:docker-compose.ci.yml
 
 jobs:
   test:
@@ -34,14 +35,22 @@ jobs:
         working-directory: sut
         run: |
           printf 'SPRINT=sprint5\nDISABLE_LOGGING=true\n' > .env
-          docker compose -f docker-compose.prod.yml up --pull missing -d
-          docker compose -f docker-compose.prod.yml ps
+
+          # The prebuilt `web` and `cron` images on Docker Hub were pushed from
+          # an arm64 machine and never rebuilt, so they die with "exec format
+          # error" on an amd64 runner. `web` is nginx plus a vhost.conf, so it
+          # builds here in seconds from the official multi-arch base image, and
+          # `cron` is parked behind a profile because no test needs it.
+          printf 'services:\n  web:\n    image: toolshop-web-ci\n    build:\n      context: ./_docker\n      dockerfile: web.docker\n  cron:\n    profiles: ["disabled"]\n' > docker-compose.ci.yml
+
+          docker compose up --build -d
+          docker compose ps
 
       - name: Migrate and seed the database
         working-directory: sut
         run: |
           for i in $(seq 1 30); do
-            if docker compose -f docker-compose.prod.yml exec -T laravel-api \
+            if docker compose exec -T laravel-api \
                  php artisan migrate:fresh --seed --force; then
               echo "Database seeded on attempt $i"
               exit 0
@@ -50,11 +59,14 @@ jobs:
             sleep 10
           done
           echo "Could not seed the database within 5 minutes"
+          docker compose ps -a
+          docker compose logs mariadb --tail=40
           exit 1
 
       - name: Wait for the API to serve data
+        working-directory: sut
         run: |
-          for i in $(seq 1 60); do
+          for i in $(seq 1 24); do
             if curl -sf "$API_BASE_URL/status" > /dev/null 2>&1; then
               total=$(curl -sf "$API_BASE_URL/products" | grep -o '"total":[0-9]*' | head -1 | cut -d: -f2)
               if [ -n "$total" ] && [ "$total" -gt 0 ]; then
@@ -67,10 +79,14 @@ jobs:
             fi
             sleep 5
           done
-          echo "The API did not become ready within 5 minutes"
+          echo "The API did not become ready within 2 minutes"
+          docker compose ps -a
+          docker compose logs web --tail=40
+          curl -sv "$API_BASE_URL/status" 2>&1 | tail -20
           exit 1
 
       - name: Wait for the UI to respond
+        working-directory: sut
         run: |
           for i in $(seq 1 60); do
             if curl -sf "$UI_BASE_URL" > /dev/null 2>&1; then
@@ -81,6 +97,8 @@ jobs:
             sleep 5
           done
           echo "The UI did not become ready within 5 minutes"
+          docker compose ps -a
+          docker compose logs angular-ui --tail=40
           exit 1
 
       - run: npx playwright install --with-deps
@@ -93,7 +111,7 @@ jobs:
       - name: Container logs
         if: failure()
         working-directory: sut
-        run: docker compose -f docker-compose.prod.yml logs --tail=120
+        run: docker compose logs --tail=120
 
       - uses: actions/upload-artifact@v4
         if: always()
