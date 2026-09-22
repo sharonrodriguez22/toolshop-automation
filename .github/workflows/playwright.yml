@@ -8,6 +8,10 @@ on:
     - cron: '0 9 * * 1'
   workflow_dispatch:
 
+env:
+  UI_BASE_URL: http://localhost:4200
+  API_BASE_URL: http://localhost:8091
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -22,15 +26,74 @@ jobs:
       - run: npm ci
 
       - run: npx tsc --noEmit
-      
+
+      - name: Clone the application under test
+        run: git clone --depth 1 https://github.com/testsmith-io/practice-software-testing.git sut
+
+      - name: Start Toolshop with Docker
+        working-directory: sut
+        run: |
+          printf 'SPRINT=sprint5\nDISABLE_LOGGING=true\n' > .env
+          docker compose -f docker-compose.prod.yml up --pull missing -d
+          docker compose -f docker-compose.prod.yml ps
+
+      - name: Migrate and seed the database
+        working-directory: sut
+        run: |
+          for i in $(seq 1 30); do
+            if docker compose -f docker-compose.prod.yml exec -T laravel-api \
+                 php artisan migrate:fresh --seed --force; then
+              echo "Database seeded on attempt $i"
+              exit 0
+            fi
+            echo "attempt $i: the database is not accepting connections yet"
+            sleep 10
+          done
+          echo "Could not seed the database within 5 minutes"
+          exit 1
+
+      - name: Wait for the API to serve data
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf "$API_BASE_URL/status" > /dev/null 2>&1; then
+              total=$(curl -sf "$API_BASE_URL/products" | grep -o '"total":[0-9]*' | head -1 | cut -d: -f2)
+              if [ -n "$total" ] && [ "$total" -gt 0 ]; then
+                echo "API ready on attempt $i, serving $total products"
+                exit 0
+              fi
+              echo "attempt $i: the API responds but the catalog is empty"
+            else
+              echo "attempt $i: the API is not responding yet"
+            fi
+            sleep 5
+          done
+          echo "The API did not become ready within 5 minutes"
+          exit 1
+
+      - name: Wait for the UI to respond
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf "$UI_BASE_URL" > /dev/null 2>&1; then
+              echo "UI ready on attempt $i"
+              exit 0
+            fi
+            echo "attempt $i: the UI is not responding yet"
+            sleep 5
+          done
+          echo "The UI did not become ready within 5 minutes"
+          exit 1
+
       - run: npx playwright install --with-deps
 
       - run: npx playwright test --project=ui-chromium --project=api
         env:
-          UI_BASE_URL: ${{ secrets.UI_BASE_URL }}
-          API_BASE_URL: ${{ secrets.API_BASE_URL }}
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+
+      - name: Container logs
+        if: failure()
+        working-directory: sut
+        run: docker compose -f docker-compose.prod.yml logs --tail=120
 
       - uses: actions/upload-artifact@v4
         if: always()
