@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('la home carga y muestra el catálogo', async ({ page }) => {
+test('the home page loads and shows the catalog', async ({ page }) => {
   await page.goto('/');
 
   await expect(page).toHaveTitle(/Practice Software Testing/);

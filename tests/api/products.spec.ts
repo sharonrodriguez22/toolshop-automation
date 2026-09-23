@@ -1,57 +1,57 @@
 import { test, expect } from '@fixtures/test';
 
-test('GET /products devuelve una página del catálogo', async ({
+test('GET /products returns a page of the catalog', async ({
   productsClient,
 }) => {
-  const pagina = await productsClient.list();
+  const firstPage = await productsClient.list();
 
-  expect(pagina.current_page).toBe(1);
-  expect(pagina.data.length).toBeGreaterThan(0);
-  expect(pagina.data.length).toBeLessThanOrEqual(pagina.per_page);
-  expect(pagina.total).toBeGreaterThanOrEqual(pagina.data.length);
+  expect(firstPage.current_page).toBe(1);
+  expect(firstPage.data.length).toBeGreaterThan(0);
+  expect(firstPage.data.length).toBeLessThanOrEqual(firstPage.per_page);
+  expect(firstPage.total).toBeGreaterThanOrEqual(firstPage.data.length);
 });
 
-test('cada producto trae precio, categoría y marca', async ({
+test('every product carries a price, a category and a brand', async ({
   productsClient,
 }) => {
   const { data } = await productsClient.list();
 
-  for (const producto of data) {
-    expect(producto.id).toBeTruthy();
-    expect(producto.name).toBeTruthy();
-    expect(typeof producto.price).toBe('number');
-    expect(producto.category.name).toBeTruthy();
-    expect(producto.brand.name).toBeTruthy();
+  for (const product of data) {
+    expect(product.id).toBeTruthy();
+    expect(product.name).toBeTruthy();
+    expect(typeof product.price).toBe('number');
+    expect(product.category.name).toBeTruthy();
+    expect(product.brand.name).toBeTruthy();
   }
 });
 
-test('la búsqueda por API filtra el catálogo', async ({ productsClient }) => {
-  const todos = await productsClient.list();
-  const filtrados = await productsClient.search('hammer');
+test('the API search filters the catalog', async ({ productsClient }) => {
+  const all = await productsClient.list();
+  const filtered = await productsClient.search('hammer');
 
-  expect(filtrados.total).toBeGreaterThan(0);
-  expect(filtrados.total).toBeLessThan(todos.total);
+  expect(filtered.total).toBeGreaterThan(0);
+  expect(filtered.total).toBeLessThan(all.total);
 });
 
-test('un producto inexistente devuelve 404', async ({ productsClient }) => {
+test('a nonexistent product returns 404', async ({ productsClient }) => {
   const response = await productsClient.getById('01ZZZZZZZZZZZZZZZZZZZZZZZZ');
 
   expect(response.status()).toBe(404);
 });
 
-test('el usuario autenticado puede consultar su perfil', async ({
+test('an authenticated user can read their own profile', async ({
   authedRequest,
 }) => {
   const response = await authedRequest.get('/users/me');
 
   expect(response.status()).toBe(200);
 
-  const perfil = await response.json();
-  expect(perfil.email).toBe(process.env.TEST_USER_EMAIL);
-  expect(perfil.first_name).toBeTruthy();
+  const profile = await response.json();
+  expect(profile.email).toBe(process.env.TEST_USER_EMAIL);
+  expect(profile.first_name).toBeTruthy();
 });
 
-test('el perfil sin token devuelve 401', async ({ request }) => {
+test('the profile endpoint returns 401 without a token', async ({ request }) => {
   const response = await request.get('/users/me');
 
   expect(response.status()).toBe(401);

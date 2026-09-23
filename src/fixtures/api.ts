@@ -11,11 +11,11 @@ type WorkerFixtures = {
 export const apiTest = base.extend<{}, WorkerFixtures>({
   authedRequest: [
     async ({}, use) => {
-      const anonimo = await playwrightRequest.newContext({
+      const anonymous = await playwrightRequest.newContext({
         baseURL: process.env.API_BASE_URL,
       });
 
-      const login = await anonimo.post('/users/login', {
+      const login = await anonymous.post('/users/login', {
         data: {
           email: process.env.TEST_USER_EMAIL,
           password: process.env.TEST_USER_PASSWORD,
@@ -23,19 +23,19 @@ export const apiTest = base.extend<{}, WorkerFixtures>({
       });
 
       if (!login.ok()) {
-        throw new Error(`Login falló con status ${login.status()}`);
+        throw new Error(`Login failed with status ${login.status()}`);
       }
 
       const { access_token } = await login.json();
-      await anonimo.dispose();
+      await anonymous.dispose();
 
-      const autenticado = await playwrightRequest.newContext({
+      const authenticated = await playwrightRequest.newContext({
         baseURL: process.env.API_BASE_URL,
         extraHTTPHeaders: { Authorization: `Bearer ${access_token}` },
       });
 
-      await use(autenticado);
-      await autenticado.dispose();
+      await use(authenticated);
+      await authenticated.dispose();
     },
     { scope: 'worker' },
   ],

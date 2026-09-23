@@ -10,7 +10,9 @@ export class ProductsClient {
     });
 
     if (!response.ok()) {
-      throw new Error(`GET /products?page=${page} falló: ${response.status()}`);
+      throw new Error(
+        `GET /products?page=${page} failed with status ${response.status()}`
+      );
     }
 
     return response.json();
@@ -22,23 +24,26 @@ export class ProductsClient {
     });
 
     if (!response.ok()) {
-      throw new Error(`GET /products/search falló: ${response.status()}`);
+      throw new Error(
+        `GET /products/search failed with status ${response.status()}`
+      );
     }
 
     return response.json();
   }
 
   async firstAvailable(): Promise<Product> {
-    const primera = await this.list();
+    const firstPage = await this.list();
 
-    for (let pagina = 1; pagina <= primera.last_page; pagina++) {
-      const { data } = pagina === 1 ? primera : await this.list(pagina);
-      const disponible = data.find((p) => p.in_stock);
-      if (disponible) return disponible;
+    for (let pageNumber = 1; pageNumber <= firstPage.last_page; pageNumber++) {
+      const { data } =
+        pageNumber === 1 ? firstPage : await this.list(pageNumber);
+      const available = data.find((p) => p.in_stock);
+      if (available) return available;
     }
 
     throw new Error(
-      `Ningún producto en stock en las ${primera.last_page} páginas del catálogo`
+      `No product is in stock across the ${firstPage.last_page} pages of the catalog`
     );
   }
 

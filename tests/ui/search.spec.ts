@@ -1,23 +1,23 @@
 import { test, expect } from '@fixtures/test';
 
-test('buscar filtra el catálogo y todos los resultados coinciden', async ({
+test('searching filters the catalog and every result matches', async ({
   productsPage,
 }) => {
-  const sinFiltro = await productsPage.productCards.count();
+  const unfilteredCount = await productsPage.productCards.count();
 
   await productsPage.searchFor('hammer');
 
-  const nombres = await productsPage.productNames.allTextContents();
+  const names = await productsPage.productNames.allTextContents();
 
-  expect(nombres.length).toBeGreaterThan(0);
-  expect(nombres.length).toBeLessThan(sinFiltro);
+  expect(names.length).toBeGreaterThan(0);
+  expect(names.length).toBeLessThan(unfilteredCount);
 
-  for (const nombre of nombres) {
-    expect(nombre.toLowerCase()).toContain('hammer');
+  for (const name of names) {
+    expect(name.toLowerCase()).toContain('hammer');
   }
 });
 
-test('una búsqueda sin resultados muestra el estado vacío', async ({
+test('a search with no results shows the empty state', async ({
   productsPage,
 }) => {
   await productsPage.searchFor('zzzzqqqxyz');
