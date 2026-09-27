@@ -6,13 +6,24 @@ import {
 
 type WorkerFixtures = {
   authedRequest: APIRequestContext;
+  apiRequest: APIRequestContext;
 };
 
 export const apiTest = base.extend<{}, WorkerFixtures>({
+  /**
+   * An authenticated context against the API.
+   *
+   * Worker-scoped on purpose: POST /users/login returns a token with
+   * expires_in: 300, so logging in per test would waste five seconds of every
+   * run on an endpoint that already has its own test, while caching the token
+   * globally would risk it expiring mid-run. One login per worker sits well
+   * inside the window.
+   */
   authedRequest: [
     async ({}, use) => {
       const anonymous = await playwrightRequest.newContext({
         baseURL: process.env.API_BASE_URL,
+        extraHTTPHeaders: { Accept: 'application/json' },
       });
 
       const login = await anonymous.post('/users/login', {
@@ -31,11 +42,36 @@ export const apiTest = base.extend<{}, WorkerFixtures>({
 
       const authenticated = await playwrightRequest.newContext({
         baseURL: process.env.API_BASE_URL,
-        extraHTTPHeaders: { Authorization: `Bearer ${access_token}` },
+        extraHTTPHeaders: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${access_token}`,
+        },
       });
 
       await use(authenticated);
       await authenticated.dispose();
+    },
+    { scope: 'worker' },
+  ],
+
+  /**
+   * An unauthenticated context pinned to API_BASE_URL, for UI tests that need
+   * real data before they can start — a product id, say.
+   *
+   * This is deliberately separate from Playwright's own `request` fixture.
+   * That one follows the project's baseURL, which is what lets the api-bugs
+   * project aim the same specs at the intentionally defective build. Setup
+   * data must always come from the real API, whatever the project under test.
+   */
+  apiRequest: [
+    async ({}, use) => {
+      const context = await playwrightRequest.newContext({
+        baseURL: process.env.API_BASE_URL,
+        extraHTTPHeaders: { Accept: 'application/json' },
+      });
+
+      await use(context);
+      await context.dispose();
     },
     { scope: 'worker' },
   ],

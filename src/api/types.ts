@@ -22,3 +22,50 @@ export interface Paginated<T> {
   to: number;
   total: number;
 }
+
+export interface CartItem {
+  id: string;
+  cart_id: string;
+  product_id: string;
+  quantity: number;
+  discount_percentage: number | null;
+  discounted_price?: number;
+  product: Product;
+}
+
+export interface Cart {
+  id: string;
+  additional_discount_percentage: number | null;
+  lat: number | null;
+  lng: number | null;
+  cart_items: CartItem[];
+}
+
+export type PaymentMethod =
+  | 'bank-transfer'
+  | 'cash-on-delivery'
+  | 'credit-card'
+  | 'buy-now-pay-later'
+  | 'gift-card';
+
+export interface InvoicePayload {
+  cart_id: string;
+  payment_method: PaymentMethod;
+  payment_details: Record<string, string>;
+  billing_street: string;
+  billing_city: string;
+  billing_country: string;
+  billing_state?: string;
+  billing_postal_code?: string;
+}
+
+export interface Invoice {
+  id: string;
+  invoice_number: string;
+  invoice_date: string;
+  billing_street: string;
+  billing_city: string;
+  billing_country: string;
+  total: number;
+  payment_method: PaymentMethod;
+}
