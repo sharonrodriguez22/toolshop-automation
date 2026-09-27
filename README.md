@@ -21,17 +21,22 @@ implicit in the code.
 
 ## What is covered
 
-Ten tests across two layers, plus an authentication setup project.
+Twenty-two tests across two layers, plus an authentication setup project.
 
-**UI (`ui-chromium`)**
+### UI (`ui-chromium`)
 
 | Test | What it proves |
 | --- | --- |
 | the home page loads and shows the catalog | The app boots and renders products |
 | searching filters the catalog and every result matches | Search narrows the list *and* every result is relevant — not just that the count changed |
 | a search with no results shows the empty state | The negative path renders `no-results`, and the grid is genuinely empty |
+| adding a product from its detail page puts it in the cart | The add-to-cart path works end to end, through two chained requests |
+| the header badge shows the quantity added | The cart count is shared state, updated outside the page that changed it |
+| changing the quantity updates the line price | The line total is recalculated, not just the stored quantity |
+| removing the only product leaves the cart empty | Removal actually clears the row |
+| a signed-in customer can check out and the order reaches the API | The whole four-step wizard — **currently an expected failure, see Findings** |
 
-**API (`api`)**
+### API (`api`)
 
 | Test | What it proves |
 | --- | --- |
@@ -41,9 +46,19 @@ Ten tests across two layers, plus an authentication setup project.
 | a nonexistent product returns 404 | Error handling, not just happy paths |
 | an authenticated user can read their own profile | Bearer token flow works end to end |
 | the profile endpoint returns 401 without a token | The endpoint is actually protected |
+| a new cart is created empty | `POST /carts` returns a usable, empty cart |
+| adding a product stores it with the requested quantity | The item and its quantity survive the round trip |
+| updating the quantity replaces the previous value | An update replaces rather than accumulates |
+| removing the product empties the cart | `DELETE` on an item returns 204 and the cart is empty |
+| deleting the cart makes it unreachable | 204, and the next read is a 404 |
+| a cart that does not exist returns 404 | Message: *Requested item not found* |
+| adding to a cart that does not exist returns 404 | Message: *Cart not found* |
+| a quantity outside the allowed range is rejected | 422 below 1 and above 99 |
 
-The last two are a pair on purpose. A test that only checks the authenticated
-case cannot tell a working guard from a missing one.
+Some of these pair up on purpose. A test that only checks the authenticated
+profile cannot tell a working guard from a missing one. The two 404s carry
+*different* messages, so asserting the message is what tells the read path and
+the write path apart.
 
 ---
 
@@ -90,7 +105,7 @@ documented by the Toolshop project, not private secrets:
 | `npm test` | UI and API suites — the same selection CI runs |
 | `npm run test:ui` | UI only |
 | `npm run test:api` | API only |
-| `npm run test:bugs` | The API specs against the intentionally defective build (see below) |
+| `npm run test:bugs` | The API specs against the intentionally defective build |
 | `npm run test:headed` | UI with a visible browser |
 | `npm run test:debug` | Playwright UI mode |
 | `npm run report` | Opens the last HTML report |
@@ -102,8 +117,8 @@ documented by the Toolshop project, not private secrets:
 
 ```
 src/
-  api/        ProductsClient, response types
-  pages/      Page Objects
+  api/        ProductsClient, CartClient, InvoiceClient, response types
+  pages/      Page Objects, plus a Header component object
   fixtures/   Composed Playwright fixtures
   data/       Test-data factories
 tests/
@@ -127,11 +142,15 @@ the test lets `expect()` retry.
 Page Objects also carry no assertions. Assertions live in the test, which is
 where the intent is readable.
 
-### Waiting on the application's own render signal
+### Wait for the application's own signal, not for something that resembles it
 
-The first version of `searchFor()` awaited the network response. It was flaky,
-and the reason is worth recording. Measured against the live app, searching
-`hammer` then `pliers` without reloading:
+This suite got the same lesson three times, in three different places, and each
+one produced a different kind of wrong answer. They are worth recording
+together.
+
+**Searching.** The first version of `searchFor()` awaited the network response.
+Measured against the live app, searching `hammer` then `pliers` without
+reloading:
 
 ```
                   marker   cards
@@ -142,15 +161,36 @@ pliers, on click    no       6     ← the marker is removed by the click itself
 pliers, +1200ms     YES      4
 ```
 
-The response lands while the list still shows the previous results. A test
-reading at that point gets the unfiltered catalog and fails with a baffling
-message: *expected fewer than 9, received 9*.
-
-The app adds a `search_completed` marker to the DOM when it has finished
+The response lands while the list still shows the previous results, so a test
+reading there gets the unfiltered catalog and fails with *expected fewer than 9,
+received 9*. The app adds a `search_completed` marker when it has finished
 rendering, and removes it when a new search starts. Both halves matter: without
-the removal, a second search would find a stale marker and skip the wait
-entirely. When an application exposes a signal like this, waiting on it beats
-inferring the moment from network traffic.
+the removal, a second search would find a stale marker and skip the wait.
+
+**Adding to the cart.** `add()` waited for the first `POST` whose URL contained
+`/carts`. The application makes two: `POST /carts` to create the cart, then
+`POST /carts/{id}` to put the item in it. The wait matched the creation and
+returned too early, the item request was cancelled by the next navigation, and
+the cart came up empty — intermittently, because whether it was cancelled
+depended on timing. Matching on the shape of the path is what tells them apart.
+
+**Entering the billing step.** Waiting for the `GET /users/me` response was not
+enough either. Playwright sees the response arrive before the application's own
+subscriber has written it into the form, so the test still typed too early and
+was overwritten. The fix waits on the *effect* — the street field holding a
+value — not on the response that causes it.
+
+The general form: a proxy for the signal is not the signal. Network traffic,
+in particular, arrives before the UI has reacted to it.
+
+### `Accept: application/json` is not optional
+
+The API projects and every request context set it explicitly. Without it,
+Laravel answers a failed validation with `redirect()->back()` instead of a 422,
+and Playwright follows the redirect — turning a validation error into a
+bewildering 404 from the API root. The real front end sends this header, so a
+client that omits it is not exercising the same code path as the application's
+own consumer.
 
 ### Worker-scoped authentication for the API
 
@@ -164,6 +204,25 @@ The UI takes a different route — `auth.setup.ts` logs in through the browser
 once and saves `storageState`, which the `ui-chromium` project loads. The login
 form is exercised for real, exactly once.
 
+### The subject under test and the data source are different clients
+
+`productsClient` and `cartClient` are built on Playwright's `request` fixture,
+which follows the project's `baseURL`. That is what lets the `api-bugs` project
+aim the same specs at the intentionally defective build.
+
+Setup data must not move with them. A UI test that needs a product id before it
+can start uses the `catalog` fixture, pinned to the real API whatever project is
+running, and never the subject of an assertion.
+
+### Cart isolation comes free, and it is worth knowing why
+
+The cart id lives in `sessionStorage`, and Playwright's `storageState` persists
+cookies and `localStorage` only. Every test starts from the same snapshot with
+an empty `sessionStorage`, so each one creates its own cart with no help from
+the suite. Worth stating explicitly, because the obvious assumption — that a
+shared signed-in session means a shared cart — is what would send you building
+an isolation mechanism the application does not need.
+
 ### `testIdAttribute: 'data-test'`
 
 Toolshop marks its elements with `data-test`, not Playwright's default
@@ -176,17 +235,21 @@ The app ships in seven languages and picks one from the browser. Pinning the
 locale is what keeps `toHaveTitle(/Practice Software Testing/)` from depending
 on where the test happens to run.
 
-### Fixtures compose in a chain
-
-`src/fixtures/api.ts` defines the worker-scoped `authedRequest`;
-`src/fixtures/test.ts` extends *that* with the test-scoped `productsPage` and
-`productsClient`. Every spec imports from a single place, and the two scopes
-stay separate.
-
 ### Retries only in CI
 
 `retries: 2` and `workers: 1` apply under `CI` alone. Locally, retries are off:
 a flaky test should be visible while it is being written, not smoothed over.
+
+### One test is expected to fail
+
+`tests/ui/checkout.spec.ts` is annotated with `test.fail()`. It documents a
+defect that loses real orders (finding 6 below). Playwright reports an expected
+failure as a pass, so the pipeline stays green and the defect stays visible in
+the report; if the application is fixed, the run reports an *unexpected pass*
+and the annotation comes off.
+
+Making it green by clicking confirm twice would have worked. It would also have
+hidden the defect, which is the opposite of the job.
 
 ---
 
@@ -258,20 +321,67 @@ exactly as much as in an assertion.
 
 ## Findings in the application under test
 
-Three defects surfaced while building this suite. None were the goal of a test;
-all three came out of debugging.
+Six defects surfaced while building this suite. None were the goal of a test;
+all six came out of debugging.
 
-**The result counter briefly shows a wrong number.** Searching `hammer` renders
-*"45 products found for 'hammer'"* for under half a second before settling on
-the correct *"6 products found"*. A user on a slow connection sees it. Found
-while diagnosing the flaky search test.
+**1 — The checkout confirms an order that was never created.** The most serious
+one. `PaymentComponent.checkPayment()` returns `of(this.state)` synchronously,
+while `this.state` is only assigned inside the subscriber of the validation
+request it depends on:
 
-**The Docker setup in the project's README does not mention seeding.** Following
-the production instructions verbatim yields a running application with an empty
-catalog and no indication that a step is missing. `init-data.sh` exists, but the
-README's Docker section does not reference it.
+```ts
+checkPayment(paymentPayload: any): Observable<boolean> {
+  if (!this.state) {
+    this.paymentService.validate(endpoint, paymentPayload).subscribe({
+      next: (res) => { this.paymentMessage = res.message; this.state = true; },
+      ...
+    });
+  }
+  return of(this.state);   // read before the response that sets it
+}
+```
 
-**Two published Docker images are arm64-only and 14 months stale.**
+On the first confirm the returned value is still `undefined`, so the
+`if (result === true)` guard is false and `createInvoice` never fires. The
+customer is shown **"Payment was successful"** regardless, because that banner
+is bound to the payment-check message rather than to the order existing. A
+second confirm does create the invoice, since `this.state` is true by then.
+
+Reproducible by hand: check out, confirm once, and look for the invoice —
+there is none. Compounding it, the `createInvoice` error branch is empty
+(`error: () => { // handle error if needed }`), so a genuine failure would be
+swallowed the same way.
+
+The suite catches this only because the checkout test confirms through
+`GET /invoices` instead of trusting the banner. A test that ended at
+`expect(successMessage).toBeVisible()` would be green right now, over a lost
+order.
+
+**2 — A saved address never loads back into the checkout form.** `GET /users/me`
+returns the country as a display name (`"country": "Austria"`), while the form's
+country `<select>` is built from ISO codes (`value="AT"`). Patching a select
+with a value no option carries resolves to empty, so the saved country silently
+disappears — along with `house_number` and `postal_code`, which the record
+stores as `null`. All three are required, leaving "proceed to checkout"
+permanently disabled until the customer fills them in by hand.
+
+**3 — The result counter briefly shows a wrong number.** Searching `hammer`
+renders *"45 products found for 'hammer'"* for under half a second before
+settling on the correct *"6 products found"*. A user on a slow connection sees
+it.
+
+**4 — The cart's remove control has no test hook.** Every other element in the
+cart and checkout flow carries a `data-test` attribute. The remove button is
+`<a class="btn btn-danger">` with an icon inside, so it can only be located
+structurally, by its class within the product's row — a selector that breaks on
+any markup change. A testability defect rather than a user-facing one.
+
+**5 — The Docker setup in the project's README does not mention seeding.**
+Following the production instructions verbatim yields a running application with
+an empty catalog and no indication that a step is missing. `init-data.sh`
+exists, but the README's Docker section does not reference it.
+
+**6 — Two published Docker images are arm64-only and 14 months stale.**
 `practice-software-testing-web` and `-cron` cannot run on amd64 hosts, which
 includes every standard CI runner. The project's own pipeline builds from source
 rather than using these images, so the documented production path appears to be
@@ -281,8 +391,9 @@ untested on amd64.
 
 ## Not covered yet
 
-- **Cart and checkout.** The most valuable untested flow, at both layers. The
-  user factory in `src/data/` is in place for the registration path it needs.
+- **Guest checkout.** The wizard has a separate guest path (`proceed-2-guest`)
+  that this suite does not exercise.
+- **Registration.** The user factory in `src/data/` is in place for it.
 - **Cross-browser.** Only Chromium runs today; Firefox and WebKit are a config
   change away but would triple the run time for little signal at this size.
 - **Accessibility and visual regression.** Out of scope for now, deliberately.
