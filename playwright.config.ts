@@ -31,14 +31,24 @@ export default defineConfig({
       dependencies: ['setup'],
       testDir: './tests/ui',
     },
+    // Accept: application/json is not optional. Laravel answers a failed
+    // validation with a redirect when the client does not ask for JSON, and
+    // Playwright follows it — turning a 422 into a confusing 404. The real
+    // front end sends this header; so must the suite.
     {
       name: 'api',
-      use: { baseURL: process.env.API_BASE_URL },
+      use: {
+        baseURL: process.env.API_BASE_URL,
+        extraHTTPHeaders: { Accept: 'application/json' },
+      },
       testDir: './tests/api',
     },
     {
       name: 'api-bugs',
-      use: { baseURL: process.env.API_BUGS_BASE_URL },
+      use: {
+        baseURL: process.env.API_BUGS_BASE_URL,
+        extraHTTPHeaders: { Accept: 'application/json' },
+      },
       testDir: './tests/api',
     },
   ],
