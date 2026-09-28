@@ -357,6 +357,9 @@ The suite catches this only because the checkout test confirms through
 `expect(successMessage).toBeVisible()` would be green right now, over a lost
 order.
 
+Reported upstream as
+[testsmith-io/practice-software-testing#844](https://github.com/testsmith-io/practice-software-testing/issues/844).
+
 **2 — A saved address never loads back into the checkout form.** `GET /users/me`
 returns the country as a display name (`"country": "Austria"`), while the form's
 country `<select>` is built from ISO codes (`value="AT"`). Patching a select
